@@ -1,0 +1,9 @@
+{
+    "version": "2.0.0",
+    "tasks": [{
+      "label": "nimbuild",
+      "type": "shell",
+      "command": "/usr/bin/nim", 
+      "args": ["c", "--debugger:native", "${file}"]
+    }]
+    }
