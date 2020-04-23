@@ -4,3 +4,4 @@ src/*
 tests/*
 !tests/*.nim
 tmp/*
+.history
