@@ -3,15 +3,12 @@ from strutils import parseFloat, strip
 from random import randomize, shuffle, initRand
 from sequtils import toSeq
 import sequtils2
+import data_types
 
-type
-  DataRow = seq[float64]
-  DataLol = seq[DataRow]
-  DataSet = (DataLol, seq[char])
-
+# TODO: KS: 2020-04-23: rename to merge_datasets
 proc merge_folds*(folds: seq[DataSet]): DataSet =
     var new_data: DataLol
-    var new_label: seq[char]
+    var new_label: seq[Label]
     for f in folds:
         var samples = f[0]
         for sample in samples:
@@ -25,14 +22,14 @@ proc merge_folds*(folds: seq[DataSet]): DataSet =
 proc read_data_from_csv*(file_name: string, has_header: bool = false): DataSet =    
     var 
         rows: seq[seq[float]]
-        labels: seq[char]
+        labels: seq[Label]
 
     var p: CsvParser
     p.open(file_name)
     if has_header:
         p.readHeaderRow()
 
-    # TODO: for future: handle empty rows
+# TODO: KS: 2020-04-21: for future: handle empty rows
     while readRow(p):
         var row: seq[float] = @[]
         for val in items(p.row):
@@ -54,7 +51,7 @@ proc cross_validation_split*(dataset: DataSet, n_folds: int, seed: int = 1): seq
     let n_samples = dataset[0].len
     var fold_size = calculate_fold_size(n_samples, n_folds)
     var data_new: DataLol
-    var labels_new: seq[char]
+    var labels_new: seq[Label]
 
     var idx:seq[int] = toSeq(0 .. n_samples-1)
     randomize(seed)
@@ -77,15 +74,3 @@ proc cross_validation_split*(dataset: DataSet, n_folds: int, seed: int = 1): seq
         labels_new = @[]
         cnt = 0
     result = dataset_split
-
-
-# dataset_split = list()
-# dataset_copy = list(dataset)
-# fold_size = int(len(dataset) / n_folds)
-# for i in range(n_folds):
-# 	fold = list()
-# 	while len(fold) < fold_size:
-# 		index = randrange(len(dataset_copy))
-# 		fold.append(dataset_copy.pop(index))
-# 	dataset_split.append(fold)
-# return dataset_split
