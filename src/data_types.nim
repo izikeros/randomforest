@@ -3,4 +3,5 @@ type
     DataCol* = seq[float]
     DataLol* = seq[DataRow]
     DataLoc* = seq[DataCol]
-    DataSet* = (seq[DataRow], seq[char])
+    Label*   = char
+    DataSet* = (seq[DataRow], seq[Label])
