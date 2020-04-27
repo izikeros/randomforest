@@ -1,5 +1,5 @@
 import unittest
-import ../src/helpers
+import ../src/utils
 
 type
   DataRow = seq[float64]
