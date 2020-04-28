@@ -39,8 +39,8 @@ suite "To terminal":
     test "base":        
         let node = to_terminal(Node(), dataset4) 
         let expected = Node(isLeaf: true, label: 'B')
-        display(node)
-        display(expected)
+        # display(node)
+        # display(expected)
         check node == expected
 
 suite "Group gini":
