@@ -3,6 +3,7 @@ import sequtils
 import data_types
 import tables
 import utils
+import strformat
 
 const
     MAX_IDX = 999
@@ -10,17 +11,42 @@ const
     MAX_SCORE = 999.0
 
 type
-    Split* = ref object of RootObj
-        feature_idx*: int
-        value*: float
-        groups*: (DataSet, DataSet)
-        left*: DataSet
-        right*: DataSet
+    SplitMetrics = enum
+        gini = "gini"
+        mse = "mse"
+        max_enthropy = "entropy"
 
-proc to_terminal*(group: DataSet): Label = 
-    ## Create a terminal node value
-    let labels = group[1]
-    
+type
+    Node* = ref object of RootObj
+        # on which feature to split
+        feature_idx*: int
+        # what value use to split samples
+        value*: float        
+        # children
+        left*: Node
+        right*: Node
+        isLeaf*: bool    # ? will that be used?
+        label*: Label
+        metrics_type*: SplitMetrics      # TODO: KS: 2020-04-28: Check, what happens if we use random method at each node - we can produce more trees that vary
+        metrics_val*: float32
+
+
+proc display*(node: Node) =
+    echo "==========="
+    echo fmt"feature: {node.feature_idx}"
+    echo fmt"value: {node.value}"
+    echo fmt"isLeaf: {node.isLeaf}"
+    echo fmt"label: {node.label}"
+    echo fmt"metrics_type: {node.metrics_type}"
+    echo fmt"metrics_val: {node.metrics_val}"
+    echo " ............"
+
+proc `==`*(a,b: Node): bool =
+    (a.feature_idx == b.feature_idx) and (a.value == b.value) and (a.isLeaf == b.isLeaf) and (a.label == b.label) and (a.metrics_type == b.metrics_type) and (a.metrics_val == b.metrics_val)
+
+## Create a terminal node
+proc to_terminal*(node: Node, dataset: DataSet): Node = 
+    let labels = dataset[1]
     # count labels of the same type
     var labelFrequencies = labels.toCountTable
     # sort 
@@ -28,41 +54,10 @@ proc to_terminal*(group: DataSet): Label =
     # take most frequent
     let pair = toSeq(labelFrequencies.pairs)[0]
     # return label name as result
-    result = pair[0]
-
-# Create child splits for a node or make terminal
-proc split*(node: Split, max_depth: int, min_size: int, n_features: int, depth: int) =
-    let 
-        left = node.groups[0]
-        right = node.groups[1]
-    echo left
-    echo right
-
-    # node.groups = (@[], @[]) # TODO: KS: 2020-04-23: clear groups
-    # check for a no split (the other group is empty)
-    if (left[1].len == 0) or (right[1].len == 0):
-        let f: DataSet = merge_folds(@[left, left])
-        node.left = to_terminal(f) # FIXME: KS: 2020-04-24: Need to solve type clarity
-        #node.right = node.left
-        return
-    # # check for max depth
-    # if depth >= max_depth:
-    #     node.left = to_terminal(left)
-    #     node.right = to_terminal(right)
-    #     return
-    # # process left child
-    # if len(left) <= min_size:
-    #     node['left'] = to_terminal(left)
-    # else:
-    #     node['left'] = get_split(left, n_features)
-    #     split(node['left'], max_depth, min_size, n_features, depth+1)
-#     # process right child
-#     if len(right) <= min_size:
-#         node['right'] = to_terminal(right)
-#     else:
-#         node['right'] = get_split(right, n_features)
-#         split(node['right'], max_depth, min_size, n_features, depth+1)
-
+    var new_node = node
+    new_node.isLeaf = true
+    new_node.label = pair[0]
+    result = new_node
 
 
 # Split samples based on given feature and threshold value
@@ -118,16 +113,14 @@ proc gini_index*(groups: (DataSet, DataSet), classes: seq[char]): float =
     result = group_weighted_gini(groups[0], classes=classes, n_samples)
     result += group_weighted_gini(groups[1], classes=classes, n_samples)
 
-
-proc get_split*(dataset: DataSet, n_rf_features: int): Split =
+proc get_split*(dataset: DataSet, n_rf_features: int): (Node, (DataSet, DataSet)) =
     # make list of feature indices that we will make split on
-
+        
     var 
         b_index = MAX_IDX
         b_value = MAX_VAL
         b_score = MAX_SCORE
         b_groups: (DataSet, DataSet)
-        i_feature: int
         gini: float
 
     let 
@@ -135,12 +128,15 @@ proc get_split*(dataset: DataSet, n_rf_features: int): Split =
         n_features = feature_matrix[0].len
         classes = deduplicate(dataset[1])
         # shuffle order of features
-        feature_idx = toSeq(0 .. n_features-1)
-    
+    var feature_idx = toSeq(0 .. n_features-1)
+    shuffle(feature_idx) # TODO: KS: 2020-04-27: ensure that we control randomization
+
+    doAssert len(feature_matrix[0]) >= n_rf_features
+
     # limit number of features taken as split points
-    let feature_lim_idx = feature_idx[0 .. n_rf_features-1]
-    for f_idx in feature_lim_idx:
+    for f_idx in countUp(0, n_rf_features-1):
         for row in feature_matrix:
+            # echo fmt"Reading {f_idx} from {row}"
             var groups = test_split(f_idx, row[f_idx], dataset)
             gini = gini_index(groups, classes)
             if gini < b_score:
@@ -148,7 +144,76 @@ proc get_split*(dataset: DataSet, n_rf_features: int): Split =
                 b_value = row[f_idx]
                 b_score = gini
                 b_groups = groups
-    result = Split(
-        feature_idx: b_index,
-        value: b_value,
-        groups: b_groups)
+    # echo fmt"found new split: id:{b_index}, v:{b_value}"
+    result = (
+        Node(feature_idx: b_index,value: b_value),
+        b_groups)
+
+## Create child splits for a node or make terminal
+proc split*(node: Node, groups: (DataSet, DataSet), max_depth: int, min_size: int, n_rf_features: int, depth: int) =
+    let 
+        left = groups[0]
+        right = groups[1]
+    # echo "=== splitting node with groups: ==="
+    # echo "left:", left
+    # echo "right:", right
+    # echo "depth:", depth
+    
+
+    # --- stop conditions
+    # check for a no split (the other group is empty)
+    if (left[1].len == 0) or (right[1].len == 0):
+        let dataset: DataSet = merge_folds(@[left, right])
+        node.left = to_terminal(node, dataset)
+        node.right = node.left
+        # echo "!! stop - no split"
+        return
+    # check for max depth
+    if depth >= max_depth:
+        # echo "!! stop - max depth"
+        node.left = to_terminal(node, left)
+        node.right = to_terminal(node, right)
+        return
+
+    # process left child
+    if left[1].len <= min_size:
+        # echo "!! stop - min size"
+        node.left = to_terminal(node, left)
+    else:
+        # echo fmt"need to split left: {left}"
+        let res = get_split(left, n_rf_features)
+        node.left=res[0]
+        split(node.left,res[1], max_depth, min_size, n_rf_features, depth+1)
+    
+    # process right child
+    if right[0].len <= min_size:
+        # echo "!! stop - min size"
+        node.right = to_terminal(node, right)
+    else:
+        # echo fmt"need to split right: {right}"
+        let res = get_split(right, n_rf_features)
+        node.right=res[0]
+        split(node.right,res[1], max_depth, min_size, n_rf_features, depth+1)
+
+proc display_tree*(node: Node, parent:string) =
+    if not node.isLeaf:
+        let child = fmt"f{node.feature_idx} v{node.value} {rand(100)}"
+        if len(parent) > 0:
+            echo fmt""""{parent}"->"{child}""""
+        display_tree(node.left, child)
+        display_tree(node.right, child)
+    else:
+        let child = fmt"{node.label} {rand(100)}"
+        echo fmt""""{parent}"->"{child}""""
+
+proc to_graphviz*(node: Node, parent:string) =
+    if not node.isLeaf:
+        let child = fmt"f{node.feature_idx} v{node.value} {rand(100)}"
+        if len(parent) > 0:
+            echo fmt""""{parent}"->"{child}""""
+        display_tree(node.left, child)
+        display_tree(node.right, child)
+    else:
+        let child = fmt"{node.label} {rand(100)}"
+        echo fmt""""{parent}"->"{child}""""
+
