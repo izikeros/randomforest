@@ -6,3 +6,5 @@ tests/*
 !tests/*.nim
 tmp/*
 .history
+nimcache
+
